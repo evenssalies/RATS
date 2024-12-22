@@ -1,0 +1,346 @@
+procedure fmolsproc start end depvar
+*
+* Syntax:  @fmolsproc start end depvar
+*          # list of regressors
+*
+* Parameters:
+*   depvar        The dependent variable for the estimation
+*
+*
+* IMPORTANT NOTE FROM ESTIMA:
+*     We have found that the procedure actually isn't written properly to
+*     allow for data beginning after entry 1. If you only want to run the
+*     procedure on a sub-sample of your data set, you will need to set your
+*     things up so that the data you want starts in entry number 1 (i.e. the
+*     entry specified as the starting date on the CAL statement).
+*
+*     Just use "/" for the start and end parameters, to tell the procedure
+*     to use the default range.
+*
+*     We will try to modify the procedure at some future date to properly
+*     support entry ranges.
+*
+* Supplementary Card:
+*   The list of r.h.s. variables. NOTE: This currently only supports
+*   a simple list of variable names--it does not support the use of lag notation
+*   (e.g., X{1}) on the supplementary card.
+*
+* The procedure performs fully modified estimation of cointegrating
+* regressions between a pair of variable, using an automatic bandwidth.
+* It also tests for the constancy of the cointegrating regressions
+* using the Hansen (1992)'s L_c test of parameter instability.
+*
+* Hansen, B. E. (July 1992) "Tests for parameter instability in
+* regressions with I(1) processes". Journal of Business & Economic
+* Statistics, 10(3), pp. 321-335.
+*
+* The code slightly follows Peter Pedroni's group-fm.prg (see
+* http://www.estima.com/procs/pangroup.prg) with serious modifications
+* made to his programme.
+* The estimation and test are performed for a pure time series model.
+*
+*
+* Written 7/2002 by
+*
+* Evens Salies
+* Centre for Competition and Regulation (CCR)
+* University of East Anglia
+* NR4 7TJ Norwich
+* UK
+* e.salies@uea.ac.uk
+* evens@univ-perp.fr
+*
+*
+
+type integer start end
+type series depvar
+
+
+local integer m2 n k r s i j jj q c endl startl
+local vector[integer] reglist templist
+local vector[label] LABELVEC
+local vec[series] DATAVEC DVEC RVEC
+local vec[series] XVEC  DXVEC  E  ERESID
+
+local vec[real] O21  O12  V21  G21  G12
+local vec[real] TEMP  ITEMP1  W TEMPZ  TEMPZZ  STEMP
+local vec[real] FMOLS  TDEN  FMTSTAT TERM1
+
+local real O11 alpha2temp1 alpha2temp2 alpha2 L BWP WTEMP1 WTEMP2
+
+local rec[real] O22  V22  G22
+local rec[real] YTEMP GAMMASTAR
+local rec[real] GXX PHI ALPHA2ARRAY
+local rec[real] GAMMAE OMEGAE OMEGA GAMMA
+local rec[real] GAMMASTARZ SMALLS BIGS SMALLLSUM
+local rec[real]  EARRAY TERM2 ITEMP2 O1DOT2
+local rec[rect] G
+local symmetric[real] IDENT SIG OMEGA0
+local series u1hat ystart unit u1star ystar
+local real o1dot2inv
+
+enter(varying) reglist
+compute m2 = %rows(reglist)
+
+inquire(regressorlist) startl>>start endl>>end
+# depvar reglist
+
+compute n = endl - startl + 1
+
+dim LABELVEC(M2+2)
+
+dim DATAVEC(M2+1) DVEC(M2+1) RVEC(M2+1)
+dim XVEC(M2) DXVEC(M2) E(M2+1) ERESID(M2+1)
+
+dim O21(M2) O12(M2) V21(M2) G21(M2) G12(M2)
+dim TEMP(M2) ITEMP1(M2+1) W(N-2) TEMPZ(M2) TEMPZZ(M2+1) STEMP(M2+1)
+dim FMOLS(M2+1) TDEN(M2+1) FMTSTAT(M2+1)
+
+dim O22(M2,M2) V22(M2,M2) G22(M2,M2)
+dim YTEMP(1,1) GAMMASTAR(1,M2)
+dim GXX(M2+1,M2+1) PHI(M2+1,M2+1) ALPHA2ARRAY(M2+1,4)
+dim GAMMAE(M2+1,M2+1) OMEGAE(M2+1,M2+1) OMEGA(M2+1,M2+1) GAMMA(M2+1,M2+1)
+dim GAMMASTARZ(1,M2+1) SMALLS(M2+1,N-1) BIGS(M2+1,N-1) SMALLLSUM(M2+1,M2+1)
+
+dim G(2,2)
+dim IDENT(M2+1,M2+1)
+
+* LHS variable in data
+set DATAVEC(1) = depvar{0}
+compute LABELVEC(1) = %l(depvar)
+
+* RHS var in data
+do i=2,m2+1
+ set DATAVEC(i) = reglist(i-1){0}
+ compute LABELVEC(i) = %l(reglist(i-1))
+end do
+compute LABELVEC(m2+2) = 'Constant'
+
+do K=1,M2+1
+   set DVEC(K) 1 N = DATAVEC(K)(T)	;* y_1, x_1,... in DVEC
+   diff DVEC(K) 2 N RVEC(K)		;* Dy_1, Dx_1,... in RVEC
+   diff(center) RVEC(K) 2 N RVEC(K)	;* Dy_1-E(Dy_1), Dx_1-E(Dx_1),... in RVEC
+end do K
+
+do K=1,M2
+ set XVEC(K) 1 N = DVEC(K+1)		;* x_1, x_2... in XVEC
+ set DXVEC(K) 2 N = RVEC(K+1)		;* D(x_1-Ex_1),... in DXVEC=\hat{u}_2
+end do K
+
+linreg DVEC(1) 1 N U1HAT		;* Regress y_1 on y_2=x_1, x_2,...
+# XVEC(1) to XVEC(M2) constant		;* The constant is included to the regression
+
+set RVEC(1) = U1HAT			;* Replace RVEC(1) with \hat{u}_{1t}
+
+;* 		Now RVEC=\hat{u}=(\hat{u}_1 ¦ \hat{u}_2)
+
+;* Prewhitening using a VAR(1) in the procedure of Pedroni
+dim templist(0)
+do i=1,m2+1
+ enter(varying) templist
+ # templist rvec(i){1}
+end do i
+
+do K=1,M2+1
+ linreg(noprint) RVEC(K) 2 N E(K)
+ # templist
+ do R=1,M2+1
+  compute PHI(K,R) = %beta(R)
+ end do R
+end do K
+
+make EARRAY 3 N 			;* Put residual series of the VAR in an array
+# E
+
+**
+* Compute the kernel (quadratic) on the whitened residuals
+*  Compute the autoregressive and innovation variance parameter of the RESIDEs
+do K=1,M2+1
+ linereg(noprint) E(K) 3 N eresid(K)
+ # E(K){1}
+ compute ALPHA2ARRAY(K,1) = %beta(1)
+ statistics(noprint) eresid(K)
+ compute ALPHA2ARRAY(K,2) = SQRT(%variance)
+ compute ALPHA2ARRAY(K,3) = (2*ALPHA2ARRAY(K,1)*ALPHA2ARRAY(K,2))**2
+ compute ALPHA2ARRAY(K,4) = (1-ALPHA2ARRAY(K,1))**4
+end do K
+
+* Compute \hat{\alpha}(2)
+compute ALPHA2TEMP1 = 0.0
+compute ALPHA2TEMP2 = 0.0
+compute ALPHA2 = 0.0
+do K=1,M2+1
+ compute ALPHA2TEMP2 = %trace(ALPHA2TEMP2 + (ALPHA2ARRAY(K,2)**2)/ALPHA2ARRAY(K,4))
+end do K
+do K=1,M2+1
+ compute ALPHA2TEMP1 = %trace(ALPHA2TEMP1 + ALPHA2ARRAY(K,3)/(ALPHA2ARRAY(K,4)**2))
+end do K
+compute ALPHA2 = ALPHA2TEMP1/ALPHA2TEMP2
+
+*  Compute the Plug-in bandwidth estimator
+compute BWP = 1.3221*(ALPHA2*(N-2))**.2
+
+*  Compute the kernel
+compute W(1) = 1.0
+do S=1,N-3
+compute WTEMP1 = 25./(12.*(%pi*(S/BWP))**2)
+ compute WTEMP2 = (((sin(6.*%pi*(S/BWP)/5.))/(6.*%pi*(S/BWP)/5.))-cos(6*%pi*(S/BWP)/5.))
+ compute W(S+1) = WTEMP1*WTEMP2
+end do S
+*
+**
+
+VCV(matrix=SIG, noprint) 2 N	;* \sum_{t=2}^T\hat{u}_t\hat{u}_t^'=\hat{\Sigma}
+# RVEC(1) to RVEC(M2+1)
+
+* GAMMAE
+compute GAMMAE = %MSCALAR(0)
+compute J = 0
+compute JJ = 0
+do J=0,N-3
+ do JJ=J+1,N-3
+  do R=1,M2+1
+   do C=1,M2+1
+    compute GAMMAE(R,C) = GAMMAE(R,C)+EARRAY(JJ-J,R)*EARRAY(JJ,C)
+   end do C
+  end do R
+ end do JJ
+ do R=1,M2+1
+  do C=1,M2+1
+   compute GAMMAE(R,C) = GAMMAE(R,C)*W(J+1)/(N-2)
+  end do C
+ end do R
+end do J
+
+* OMEGAE
+compute OMEGAE = %MSCALAR(0)
+
+VCV(matrix=OMEGA0, noprint) 3 N ;* \sum_t \hat{e}_t\hat{e}_t ^\prime'
+# ERESID(1) to ERESID(m2+1)
+
+compute J = 0
+compute JJ = 0
+do J=1,N-2
+ do JJ=J+1,N-2
+  do R=1,M2+1
+   do C=1,M2+1
+    compute OMEGAE(R,C) = OMEGAE(R,C)+EARRAY(JJ-J,R)*EARRAY(JJ,C)
+   end do C
+  end do R
+ end do JJ
+ do R=1,M2+1
+  do C=1,M2+1
+   compute OMEGAE(R,C) = OMEGAE(R,C)*W(J)/(N-2)
+  end do C
+ end do R
+end do J
+compute OMEGAE = OMEGA0+OMEGAE+tr(OMEGAE)
+
+* Identity matrix
+compute IDENT = %identity(M2+1)
+
+* OMEGA, GAMMA
+compute OMEGA = inv(IDENT-PHI)*OMEGAE*inv(IDENT-tr(PHI))
+compute GAMMA = inv(IDENT-PHI)*GAMMAE*inv(IDENT-tr(PHI))-inv(IDENT-PHI)*PHI*SIG
+
+* Dispatch relevant submatrices of OMEGA for use in the computation
+* of $\hat{Omega}_{1\cdot 2}
+compute O11 = OMEGA(1,1)
+do Q=1,M2
+ compute O21(Q) = OMEGA(Q+1,1)
+ compute O12(Q) = OMEGA(1,Q+1)
+ do R=1,M2
+  compute O22(Q,R) = OMEGA(Q+1,R+1)
+ end do R
+end do Q
+
+;* Dispatch elements of GAMMA
+compute V11 = GAMMA(1,1)
+do Q=1,M2
+ compute V21(Q) = GAMMA(Q+1,1)
+ do R=1,M2
+  compute V22(Q,R) = GAMMA(Q+1,R+1)
+ end do R
+end do Q
+
+do S=2,N
+ ewise TEMP(I) = DXVEC(I)(S)		;* \hat{u}_{2s} into TEMP
+ compute YTEMP = tr(O12)*inv(O22)*TEMP ;*=\hat{\Omega}_{12}\hat{\Omega}_{22}^{-1}\hat{u}_2
+ set YSTAR S S = DVEC(1) - YTEMP(1,1)
+ * y_{1s}^{+} = y_{1s}-\hat{\Omega}_{12}\hat{\Omega}_{22}^{-1}\hat{u}_2
+end do S
+
+compute TERM1 = V21
+compute TERM2 = V22*inv(O22)*O21
+compute GAMMASTAR = tr(TERM1 - TERM2)
+
+linereg(noprint) YSTAR 2 N
+# XVEC(1) to XVEC(M2) constant
+
+ewise GXX(I,J) = %XX(I,J)	;* (\sum_t y_{2t}y_{2t}^\prime)^{-1}
+ewise ITEMP1(I) = %beta(I)	;*
+ewise GAMMASTARZ(I,J) = GAMMASTAR(I,J)	;* (\hat{\Gamma}_{21}^{+} 0)
+compute GAMMASTARZ(1,M2+1) = 0.
+compute ITEMP2 = (N-1)*GAMMASTARZ*GXX
+compute FMOLS = ITEMP1 - tr(ITEMP2)	;* \hat{A}^{+}
+set UNIT 2 N = depvar{0}>0	;* Creates a unit vector
+set U1STAR = YSTAR-(FMOLS(1)*xvec(1)+FMOLS(2)*unit)
+					;* \hat{u}_1 ^{+}
+* Compute \hat{s}_t
+do S=2,N
+ ewise TEMPZ(I) = XVEC(I)(S)
+ ewise TEMPZZ(I) = TEMPZ(I)
+ compute TEMPZZ(M2+1) = 1.0		;* The last element is 1 of the constant
+ compute STEMP = TEMPZZ*U1STAR(S)
+ do Q=1,M2+1
+  compute SMALLS(Q,S-1) = STEMP(Q)-GAMMASTARZ(1,Q)	;* \hat{s}_t
+ end do Q
+end do S
+
+do Q=1,M2+1            	;* Fill the first observation of \hat{S}
+ compute BIGS(Q,1) = SMALLS(Q,1)
+end do Q
+do S=2,N-1		;* Fill the others observations of \hat{S}
+ do Q=1,M2+1
+  compute BIGS(Q,S) = BIGS(Q,S-1)+SMALLS(Q,S) ;* \hat{S}_t
+ end do Q
+end do S
+
+compute SMALLLSUM = BIGS*tr(BIGS)
+
+compute O1DOT2 = O11-(tr(O12)*inv(O22)*O21)
+compute O1DOT2INV = 1./%scalar(O1DOT2)       	;* \hat{\Omega}_{1.2}
+compute L=O1DOT2INV*%trace(GXX*SMALLLSUM)/N
+						;* L_c statistics!
+
+ewise TDEN(I) = sqrt(%XX(I,I)*O11)
+ewise FMTSTAT(I) = FMOLS(I)/TDEN(I) ;* For student t-tests
+
+display '*'
+display '                  FMOLS RESULTS'
+display ' '
+display ' fully modified coefficient ( Student t- statistics )'
+display ' '
+display ' dependent variable :' labelvec(1)
+display ' regressors'
+do K=2,M2+2
+  display labelvec(K)
+  display @6 ##.#### FMOLS(K-1) @+6 '(' ##.#### FMTSTAT(K-1) ')'
+end do K
+
+display '			'
+display 'The L_c statistics equals' L
+
+end procedure
+
+
+
+
+
+
+
+
+
+
+
+
