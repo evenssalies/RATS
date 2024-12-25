@@ -1,0 +1,15 @@
+<!--
+/* adfjtest
+  Computation of the Augmented Dickey-Fuller F-test for joint hypothesis
+  Parameters:		series
+								number of lags
+	Author: Evens Salies, 1998.
+ 	Référence: Bourbonnais, R., Terraza, M., 1998. Analyse des séries temporelles en économie, PUF, juin.
+	*/
+
+ procedure fidisplay FI FTEST NLAGS
+ type integer FI NLAGS
+ type real FTEST
+
+ local real SCR1C 0
+ local integrer I -->
