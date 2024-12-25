@@ -1,13 +1,9 @@
-L'équation de dépar est 
+<!-- L'équation de départ est 
 ```math
-y_{1t}=c_{1}+\tilde{y}_{2t}^\prime\tilde{\beta}+u_{1t}
+y_{\displaystyle 1t}=c_{\displaystyle 1}+\tilde{y}_{2t}^\prime\tilde{\beta}+u_{1t},
 ```
-avec $\tilde{y}_{2t}^{}$ un vecteur $(n-1)\times 1$ de variables I(1), et $c_1$ la constante du mod\`ele. La statistique de test est construite après avoir estimé le modèle en suivant la proc\'edure de Phillips et Hansen (1990) d\'ecrite dans Hansen (1992). Nous nous sommes appuy\'es sur la description faite dans ce dernier article dans le cas o\`u l'\'equation de coint\'egration ne poss\`ede seulement comme composante d\'eterministique une constante.
+avec $\tilde{y}_{2t}^{}$ un vecteur de $n-1$ variables I(1) et $c_1$ la constante du modèle. La statistique de test est construite après avoir estimé le modèle en suivant la procédure de Phillips et Hansen (1990) décrite dans Hansen (1992). Nous nous sommes appuyés sur la description faite dans ce dernier article dans le cas où l'équation de cointégration possède seulement pour composante déterministique une constante. Je donnerai les étapes d'estimation très bientôt :)
 
-<!-- Nous nous sommes appuy\'e sur la description faite dans ce
-dernier article dans le cas o\`u l'\'equation de coint\'egration
-ne poss\`ede comme composante d\'eterministique une constante
-seulement.
 
 \begin{itemize}\item[(i)]{\textbf{Estimation du mod\`ele}.} On estime
 l'\'equation ci-dessus et sauvegarde la s\'erie du r\'esidu dans
